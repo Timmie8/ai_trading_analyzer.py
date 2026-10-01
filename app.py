@@ -68,6 +68,25 @@ def build_lstm_model(input_shape):
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
+# Styling functie voor tabelkleuren (Groen = Bullish, Rood = Bearish)
+def highlight_signals(val):
+    if val == "BULLISH":
+        return 'background-color: #d4edda; color: #155724; font-weight: bold;' # Zachtgroen
+    elif val == "BEARISH":
+        return 'background-color: #f8d7da; color: #721c24; font-weight: bold;' # Zachtrood
+    return ''
+
+def highlight_prob(val):
+    try:
+        prob = float(val.replace('%', ''))
+        if prob >= 55.0:
+            return 'color: #28a748; font-weight: bold;' # Groene tekst
+        elif prob <= 45.0:
+            return 'color: #dc3545; font-weight: bold;' # Rode tekst
+    except:
+        pass
+    return ''
+
 # Sidebar voor instellingen
 ticker_input = st.sidebar.text_input("Voer Ticker in:", value="NVDA").upper()
 start_button = st.sidebar.button("Start AI Analyse")
@@ -211,13 +230,23 @@ if start_button:
                 col1, col2 = st.columns(2)
                 col1.metric("Totale AI Korte Termijn Kans (1 Week)", f"{korte_termijn_avg:.1f}%")
                 
-                advies = "STERK BULLISH (KOPEN)" if korte_termijn_avg > 60 else "NEUTRAAL / WATCH" if korte_termijn_avg >= 45 else "BEARISH (VERKOPEN)"
-                col2.metric("AI Signaal", advies)
+                if korte_termijn_avg > 60:
+                    st.success(f"**AI Signaal:** STERK BULLISH (KOPEN) — Korte termijn consensus is {korte_termijn_avg:.1f}%")
+                elif korte_termijn_avg >= 45:
+                    st.warning(f"**AI Signaal:** NEUTRAAL / WATCH — Korte termijn consensus is {korte_termijn_avg:.1f}%")
+                else:
+                    st.error(f"**AI Signaal:** BEARISH (VERKOPEN) — Korte termijn consensus is {korte_termijn_avg:.1f}%")
 
             st.write("---")
-            st.write("### AI Model Overzicht Table")
+            st.write("### AI Model Overzicht")
+            
             results_df = pd.DataFrame(results)
-            st.dataframe(results_df, use_container_width=True)
+            
+            # Toepassen van styling voor Groen (Bullish) en Rood (Bearish)
+            styled_df = results_df.style.map(highlight_signals, subset=['Signaal'])\
+                                        .map(highlight_prob, subset=['Stijgingskans (%)'])
+            
+            st.dataframe(styled_df, use_container_width=True)
 
         except Exception as e:
             st.error(f"Er is een fout opgetreden bij het verwerken van {ticker_input}: {e}")
