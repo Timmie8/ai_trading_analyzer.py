@@ -340,7 +340,7 @@ if start_batch_button:
         styled_summary = summary_df.style.map(highlight_summary, subset=['Consensus Signaal'])
         st.dataframe(styled_summary, use_container_width=True)
         
-        # Details per aandeel
+       # Details per aandeel
         st.subheader("🔍 Gedetailleerde AI Resultaten per Aandeel")
         for ticker in tickers_list:
             if ticker in detailed_results and not detailed_results[ticker].empty:
@@ -350,7 +350,6 @@ if start_batch_button:
             else:
                 with st.expander(f"Bekijk gedetailleerde AI-modellen voor: {ticker}"):
                     st.write("Geen gedetailleerde gegevens beschikbaar voor deze ticker.")
-```eof
 
 ### Wat is er toegevoegd?
 1. **Volledige functionaliteit behouden**: De individuele analyse bovenaan gebruikt exact dezelfde AI-modellen (LSTM, XGBoost, LightGBM, MLP, Logistic Regression, SVM, Random Forest, Gradient Boosting) en styling.
