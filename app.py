@@ -340,7 +340,7 @@ if start_batch_button:
         styled_summary = summary_df.style.map(highlight_summary, subset=['Consensus Signaal'])
         st.dataframe(styled_summary, use_container_width=True)
         
-       # Details per aandeel
+        # Details per aandeel
         st.subheader("🔍 Gedetailleerde AI Resultaten per Aandeel")
         for ticker in tickers_list:
             if ticker in detailed_results and not detailed_results[ticker].empty:
@@ -350,11 +350,3 @@ if start_batch_button:
             else:
                 with st.expander(f"Bekijk gedetailleerde AI-modellen voor: {ticker}"):
                     st.write("Geen gedetailleerde gegevens beschikbaar voor deze ticker.")
-
-### Wat is er toegevoegd?
-1. **Volledige functionaliteit behouden**: De individuele analyse bovenaan gebruikt exact dezelfde AI-modellen (LSTM, XGBoost, LightGBM, MLP, Logistic Regression, SVM, Random Forest, Gradient Boosting) en styling.
-2. **Batch-sectie onderaan**:
-   * Een tekstvak waarin je maximaal 510 tickers kunt plakken (bijv. gekopieerd uit Excel of een tekstbestand).
-   * Voortgangsbalk (`progress_bar`) zodat je de status van de berekeningen per aandeel kunt volgen.
-   * **Rangschikking & Samenvatting**: Een overzichtstabel met alle geanalyseerde aandelen, hun 1-weekse consensus-kans en signaal.
-   * **Inklapbare detailweergave**: Je kunt per aandeel doorklikken om de exacte tabel met de donkergroene/lichtgroene/rode accentueringsregels in te zien.
