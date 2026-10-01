@@ -92,8 +92,9 @@ def style_row(row):
 
 def run_single_stock_analysis(ticker_symbol):
     """
-    Voert exact dezelfde AI-analyse uit voor een enkele ticker en retourneert 
-    de gedetailleerde resultaten en het korte termijn gemiddelde.
+    Voert de AI-analyse uit voor een enkele ticker.
+    Retourneert de gedetailleerde resultaten, de gemiddelde stijgingskans 
+    en het berekende signaal (BUY / STRONG BUY / WATCH / BEARISH).
     """
     df = get_stock_data(ticker_symbol)
     
@@ -108,7 +109,7 @@ def run_single_stock_analysis(ticker_symbol):
 
     y_1w = df['Target_1W']
     
-    # 1. LSTM Deep Learning
+    # 0. LSTM Deep Learning (Regel 0)
     X_lstm, y_lstm = [], []
     time_step = 10
     for i in range(time_step, len(X_scaled) - 5):
@@ -116,6 +117,7 @@ def run_single_stock_analysis(ticker_symbol):
         y_lstm.append(y_1w.iloc[i])
     X_lstm, y_lstm = np.array(X_lstm), np.array(y_lstm)
     
+    prob_lstm = 0.0
     if len(X_lstm) > 50 and len(np.unique(y_lstm)) > 1:
         lstm = build_lstm_model((X_lstm.shape[1], X_lstm.shape[2]))
         lstm.fit(X_lstm[:-10], y_lstm[:-10], epochs=10, batch_size=32, verbose=0)
@@ -129,7 +131,8 @@ def run_single_stock_analysis(ticker_symbol):
         })
         korte_termijn_probs.append(prob_lstm)
 
-    # 2. XGBoost
+    # 1. XGBoost (Regel 1)
+    prob_xgb = 0.0
     if len(np.unique(y_1w.iloc[:-5])) > 1:
         xgb_mod = xgb.XGBClassifier(eval_metric='logloss', max_depth=3, n_estimators=50)
         xgb_mod.fit(X_scaled[:-5], y_1w.iloc[:-5])
@@ -142,7 +145,8 @@ def run_single_stock_analysis(ticker_symbol):
         })
         korte_termijn_probs.append(prob_xgb)
 
-    # 3. LightGBM
+    # 2. LightGBM (Regel 2)
+    prob_lgb = 0.0
     if len(np.unique(y_1w.iloc[:-5])) > 1:
         lgbm = lgb.LGBMClassifier(verbosity=-1, n_estimators=50)
         lgbm.fit(X_scaled[:-5], y_1w.iloc[:-5])
@@ -155,7 +159,7 @@ def run_single_stock_analysis(ticker_symbol):
         })
         korte_termijn_probs.append(prob_lgb)
 
-    # 4. MLP Neural Net
+    # 3. MLP Neural Net
     if len(np.unique(y_1w.iloc[:-5])) > 1:
         mlp = MLPClassifier(hidden_layer_sizes=(32, 16), max_iter=150, random_state=42)
         mlp.fit(X_scaled[:-5], y_1w.iloc[:-5])
@@ -168,7 +172,7 @@ def run_single_stock_analysis(ticker_symbol):
         })
         korte_termijn_probs.append(prob_mlp)
 
-    # 5. Logistic Regression
+    # 4. Logistic Regression
     if len(np.unique(y_1w.iloc[:-5])) > 1:
         lr = LogisticRegression()
         lr.fit(X_scaled[:-5], y_1w.iloc[:-5])
@@ -181,7 +185,7 @@ def run_single_stock_analysis(ticker_symbol):
         })
         korte_termijn_probs.append(prob_lr)
 
-    # 6. Support Vector Machine (SVM)
+    # 5. Support Vector Machine (SVM)
     if len(np.unique(y_1w.iloc[:-5])) > 1:
         svm = SVC(probability=True, kernel='rbf')
         svm.fit(X_scaled[:-5], y_1w.iloc[:-5])
@@ -194,7 +198,7 @@ def run_single_stock_analysis(ticker_symbol):
         })
         korte_termijn_probs.append(prob_svm)
 
-    # 7. Random Forest (1 Jaar Horizon)
+    # 6. Random Forest (1 Jaar Horizon)
     y_1y = df['Target_1Y']
     y_1y_train = y_1y.iloc[:-252]
     if len(y_1y_train) > 100 and len(np.unique(y_1y_train)) > 1:
@@ -208,7 +212,7 @@ def run_single_stock_analysis(ticker_symbol):
             "Stijgingskans (%)": f"{prob_rf_1y * 100:.1f}%"
         })
 
-    # 8. Gradient Boosting (2 Jaar Horizon)
+    # 7. Gradient Boosting (2 Jaar Horizon)
     y_2y = df['Target_2Y']
     y_2y_train = y_2y.iloc[:-504]
     if len(y_2y_train) > 100 and len(np.unique(y_2y_train)) > 1:
@@ -223,7 +227,27 @@ def run_single_stock_analysis(ticker_symbol):
         })
 
     korte_termijn_avg = np.mean(korte_termijn_probs) * 100 if korte_termijn_probs else 0.0
-    return pd.DataFrame(results), korte_termijn_avg
+    
+    # --------------------------------------------------------------------------
+    # BEREKENING LOGICA VOOR BUY / STRONG BUY / WATCH / BEARISH
+    # --------------------------------------------------------------------------
+    first_three_bullish = (prob_lstm > 0.5 and prob_xgb > 0.5 and prob_lgb > 0.5)
+    top3_avg = np.mean([prob_lstm, prob_xgb, prob_lgb]) * 100
+    
+    if first_three_bullish:
+        # Als regel 0, 1 en 2 bullish zijn, is het sowieso ten minste BUY
+        if korte_termijn_avg >= 65.0 or top3_avg >= 70.0:
+            final_signal = "STRONG BUY"
+        else:
+            final_signal = "BUY"
+    else:
+        # Als minstens 1 van de eerste drie regels niet bullish is
+        if korte_termijn_avg >= 55.0:
+            final_signal = "NEUTRAAL / WATCH"
+        else:
+            final_signal = "BEARISH"
+
+    return pd.DataFrame(results), korte_termijn_avg, final_signal
 
 # Sidebar voor enkelvoudige instellingen
 st.sidebar.header("Enkelvoudige Analyse")
@@ -234,7 +258,7 @@ start_button = st.sidebar.button("Start AI Analyse")
 if start_button:
     with st.spinner(f"Bezig met ophalen van data en trainen van AI-modellen voor {ticker_input}..."):
         try:
-            results_df, korte_termijn_avg = run_single_stock_analysis(ticker_input)
+            results_df, korte_termijn_avg, final_signal = run_single_stock_analysis(ticker_input)
 
             st.subheader(f"Analyse Resultaten voor {ticker_input}")
             
@@ -242,12 +266,14 @@ if start_button:
                 col1, col2 = st.columns(2)
                 col1.metric("Totale AI Korte Termijn Kans (1 Week)", f"{korte_termijn_avg:.1f}%")
                 
-                if korte_termijn_avg > 60:
-                    st.success(f"**AI Signaal:** STERK BULLISH (KOPEN) — Korte termijn consensus is {korte_termijn_avg:.1f}%")
-                elif korte_termijn_avg >= 45:
-                    st.warning(f"**AI Signaal:** NEUTRAAL / WATCH — Korte termijn consensus is {korte_termijn_avg:.1f}%")
+                if final_signal == "STRONG BUY":
+                    st.success(f"🚀 **AI Signaal:** STRONG BUY (STERK KOPEN) — Regel 0, 1 en 2 zijn BULLISH en de totaalscore is hoog ({korte_termijn_avg:.1f}%)!")
+                elif final_signal == "BUY":
+                    st.success(f"✅ **AI Signaal:** BUY (KOPEN) — Regel 0, 1 en 2 (LSTM, XGBoost, LightGBM) zijn alle drie BULLISH!")
+                elif final_signal == "NEUTRAAL / WATCH":
+                    st.warning(f"👀 **AI Signaal:** NEUTRAAL / WATCH — Korte termijn consensus is {korte_termijn_avg:.1f}%, maar de top 3 heeft geen volledige consensus.")
                 else:
-                    st.error(f"**AI Signaal:** BEARISH (VERKOPEN) — Korte termijn consensus is {korte_termijn_avg:.1f}%")
+                    st.error(f"🔻 **AI Signaal:** BEARISH (VERKOPEN) — Korte termijn consensus is laag ({korte_termijn_avg:.1f}%).")
 
             st.write("---")
             st.write("### AI Model Overzicht")
@@ -295,20 +321,12 @@ if start_batch_button:
         for idx, ticker in enumerate(tickers_list):
             status_text.text(f"Bezig met verwerken van {ticker} ({idx + 1}/{total_tickers})...")
             try:
-                res_df, avg_prob = run_single_stock_analysis(ticker)
-                
-                # Bepaal consensus signaal
-                if avg_prob > 60:
-                    consensus = "STERK BULLISH"
-                elif avg_prob >= 45:
-                    consensus = "NEUTRAAL"
-                else:
-                    consensus = "BEARISH"
+                res_df, avg_prob, final_signal = run_single_stock_analysis(ticker)
                 
                 batch_summary.append({
                     "Ticker": ticker,
                     "Korte Termijn Kans (1 Wk)": f"{avg_prob:.1f}%",
-                    "Consensus Signaal": consensus,
+                    "Consensus Signaal": final_signal,
                     "Aantal Modellen Evaluatie": len(res_df)
                 })
                 detailed_results[ticker] = res_df
@@ -328,9 +346,11 @@ if start_batch_button:
         summary_df = pd.DataFrame(batch_summary)
         
         def highlight_summary(val):
-            if val == "STERK BULLISH":
-                return 'background-color: #1e7e34; color: white; font-weight: bold;'
-            elif val == "NEUTRAAL":
+            if val == "STRONG BUY":
+                return 'background-color: #155724; color: white; font-weight: bold;'
+            elif val == "BUY":
+                return 'background-color: #28a745; color: white; font-weight: bold;'
+            elif val == "NEUTRAAL / WATCH":
                 return 'background-color: #fff3cd; color: #856404; font-weight: bold;'
             elif val == "BEARISH":
                 return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
