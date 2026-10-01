@@ -40,9 +40,9 @@ def get_stock_data(ticker_symbol, period="5y"):
     
     # Returns & Targets
     df['Return_1D'] = df['Close'].pct_change(1)
-    df['Target_1W'] = (df['Close'].shift(-5) > df['Close']).astype(int)   # Korte termijn: 1 week
-    df['Target_1Y'] = (df['Close'].shift(-252) > df['Close']).astype(int)  # Lange termijn: 1 jaar
-    df['Target_2Y'] = (df['Close'].shift(-504) > df['Close']).astype(int)  # Lange termijn: 2 jaar
+    df['Target_1W'] = (df['Close'].shift(-5) > df['Close']).astype(int)
+    df['Target_1Y'] = (df['Close'].shift(-252) > df['Close']).astype(int)
+    df['Target_2Y'] = (df['Close'].shift(-504) > df['Close']).astype(int)
 
     df.dropna(inplace=True)
     return df
@@ -68,24 +68,30 @@ def build_lstm_model(input_shape):
     model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
     return model
 
-# Styling functie voor tabelkleuren (Groen = Bullish, Rood = Bearish)
-def highlight_signals(val):
-    if val == "BULLISH":
-        return 'background-color: #d4edda; color: #155724; font-weight: bold;'
-    elif val == "BEARISH":
-        return 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-    return ''
+# Styling functie voor de GEHELE regel
+HOOFDVOORSPELLERS = [
+    "XGBoost Classifier", 
+    "LightGBM", 
+    "LSTM Deep Learning"
+]
 
-def highlight_prob(val):
-    try:
-        prob = float(val.replace('%', ''))
-        if prob >= 55.0:
-            return 'color: #28a745; font-weight: bold;'
-        elif prob <= 45.0:
-            return 'color: #dc3545; font-weight: bold;'
-    except:
-        pass
-    return ''
+def style_row(row):
+    model_name = str(row['Model Name']).strip()
+    signaal = str(row['Signaal']).strip().upper()
+    
+    if signaal == "BULLISH":
+        # Hoofdvoorspellers (XG Booster, Light GBM, LSTM) -> Donkergroene regel
+        if model_name in HOOFDVOORSPELLERS:
+            return ['background-color: #1e7e34; color: white; font-weight: bold;'] * len(row)
+        # Overige modellen die Bullish zijn -> Lichtgroene regel
+        else:
+            return ['background-color: #d4edda; color: #155724; font-weight: bold;'] * len(row)
+            
+    elif signaal == "BEARISH":
+        # Bearish regels -> Zachtrode regel
+        return ['background-color: #f8d7da; color: #721c24; font-weight: bold;'] * len(row)
+        
+    return [''] * len(row)
 
 # Sidebar voor instellingen
 ticker_input = st.sidebar.text_input("Voer Ticker in:", value="NVDA").upper()
@@ -104,14 +110,10 @@ if start_button:
             
             results = []
             korte_termijn_probs = []
-            lange_termijn_probs = []
 
-            # =========================================================
-            # 1. KORTE TERMIJN MODELLEN (6 AI MODELLEN - 1 WEEK)
-            # =========================================================
             y_1w = df['Target_1W']
             
-            # Model 1: LSTM Deep Learning
+            # 1. LSTM Deep Learning
             X_lstm, y_lstm = [], []
             time_step = 10
             for i in range(time_step, len(X_scaled) - 5):
@@ -125,88 +127,79 @@ if start_button:
                 last_seq = np.expand_dims(X_scaled[-time_step:], axis=0)
                 prob_lstm = float(lstm.predict(last_seq, verbose=0)[0][0])
                 results.append({
-                    "Categorie": "Korte Termijn",
                     "Model Name": "LSTM Deep Learning",
-                    "Horizon": "1 Week",
+                    "Focus / Horizon": "1 Week (Korte Termijn)",
                     "Signaal": "BULLISH" if prob_lstm > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_lstm * 100:.1f}%"
                 })
                 korte_termijn_probs.append(prob_lstm)
 
-            # Model 2: XGBoost
+            # 2. XGBoost
             if len(np.unique(y_1w.iloc[:-5])) > 1:
                 xgb_mod = xgb.XGBClassifier(eval_metric='logloss', max_depth=3, n_estimators=50)
                 xgb_mod.fit(X_scaled[:-5], y_1w.iloc[:-5])
                 prob_xgb = safe_predict_proba(xgb_mod, X_scaled[-1:])
                 results.append({
-                    "Categorie": "Korte Termijn",
                     "Model Name": "XGBoost Classifier",
-                    "Horizon": "1 Week",
+                    "Focus / Horizon": "1 Week (Swingtrade)",
                     "Signaal": "BULLISH" if prob_xgb > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_xgb * 100:.1f}%"
                 })
                 korte_termijn_probs.append(prob_xgb)
 
-            # Model 3: LightGBM
+            # 3. LightGBM
             if len(np.unique(y_1w.iloc[:-5])) > 1:
                 lgbm = lgb.LGBMClassifier(verbosity=-1, n_estimators=50)
                 lgbm.fit(X_scaled[:-5], y_1w.iloc[:-5])
                 prob_lgb = safe_predict_proba(lgbm, X_scaled[-1:])
                 results.append({
-                    "Categorie": "Korte Termijn",
                     "Model Name": "LightGBM",
-                    "Horizon": "1 Week",
+                    "Focus / Horizon": "1 Week (Korte Termijn)",
                     "Signaal": "BULLISH" if prob_lgb > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_lgb * 100:.1f}%"
                 })
                 korte_termijn_probs.append(prob_lgb)
 
-            # Model 4: MLP Neural Network
+            # 4. MLP Neural Net
             if len(np.unique(y_1w.iloc[:-5])) > 1:
                 mlp = MLPClassifier(hidden_layer_sizes=(32, 16), max_iter=150, random_state=42)
                 mlp.fit(X_scaled[:-5], y_1w.iloc[:-5])
                 prob_mlp = safe_predict_proba(mlp, X_scaled[-1:])
                 results.append({
-                    "Categorie": "Korte Termijn",
                     "Model Name": "MLP Neural Network",
-                    "Horizon": "1 Week",
+                    "Focus / Horizon": "1 Week (Korte Termijn)",
                     "Signaal": "BULLISH" if prob_mlp > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_mlp * 100:.1f}%"
                 })
                 korte_termijn_probs.append(prob_mlp)
 
-            # Model 5: Logistic Regression
+            # 5. Logistic Regression
             if len(np.unique(y_1w.iloc[:-5])) > 1:
                 lr = LogisticRegression()
                 lr.fit(X_scaled[:-5], y_1w.iloc[:-5])
                 prob_lr = safe_predict_proba(lr, X_scaled[-1:])
                 results.append({
-                    "Categorie": "Korte Termijn",
                     "Model Name": "Logistic Regression",
-                    "Horizon": "1 Week",
+                    "Focus / Horizon": "1 Week (Sentiment)",
                     "Signaal": "BULLISH" if prob_lr > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_lr * 100:.1f}%"
                 })
                 korte_termijn_probs.append(prob_lr)
 
-            # Model 6: Support Vector Machine (SVM)
+            # 6. Support Vector Machine (SVM)
             if len(np.unique(y_1w.iloc[:-5])) > 1:
                 svm = SVC(probability=True, kernel='rbf')
                 svm.fit(X_scaled[:-5], y_1w.iloc[:-5])
                 prob_svm = safe_predict_proba(svm, X_scaled[-1:])
                 results.append({
-                    "Categorie": "Korte Termijn",
                     "Model Name": "Support Vector Machine (SVM)",
-                    "Horizon": "1 Week",
+                    "Focus / Horizon": "1-2 Weken (Trend)",
                     "Signaal": "BULLISH" if prob_svm > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_svm * 100:.1f}%"
                 })
                 korte_termijn_probs.append(prob_svm)
 
-            # =========================================================
-            # 2. LANGE TERMIJN MODELLEN (RANDOM FOREST & GRADIENT BOOSTING)
-            # =========================================================
-            # Model 7: Random Forest Ensemble (1 Jaar Horizon)
+            # 7. Random Forest (1 Jaar Horizon)
             y_1y = df['Target_1Y']
             y_1y_train = y_1y.iloc[:-252]
             if len(y_1y_train) > 100 and len(np.unique(y_1y_train)) > 1:
@@ -214,15 +207,13 @@ if start_button:
                 rf_1y.fit(X_scaled[:-252], y_1y_train)
                 prob_rf_1y = safe_predict_proba(rf_1y, X_scaled[-1:])
                 results.append({
-                    "Categorie": "Lange Termijn",
                     "Model Name": "Random Forest Ensemble",
-                    "Horizon": "1 Jaar",
+                    "Focus / Horizon": "1 Jaar (Middellang)",
                     "Signaal": "BULLISH" if prob_rf_1y > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_rf_1y * 100:.1f}%"
                 })
-                lange_termijn_probs.append(prob_rf_1y)
 
-            # Model 8: Gradient Boosting Ensemble (2 Jaar Horizon)
+            # 8. Gradient Boosting (2 Jaar Horizon)
             y_2y = df['Target_2Y']
             y_2y_train = y_2y.iloc[:-504]
             if len(y_2y_train) > 100 and len(np.unique(y_2y_train)) > 1:
@@ -230,51 +221,35 @@ if start_button:
                 gb_2y.fit(X_scaled[:-504], y_2y_train)
                 prob_gb_2y = safe_predict_proba(gb_2y, X_scaled[-1:])
                 results.append({
-                    "Categorie": "Lange Termijn",
                     "Model Name": "Gradient Boosting Ensemble",
-                    "Horizon": "2 Jaar",
+                    "Focus / Horizon": "2 Jaar (Langetermijn)",
                     "Signaal": "BULLISH" if prob_gb_2y > 0.5 else "BEARISH",
                     "Stijgingskans (%)": f"{prob_gb_2y * 100:.1f}%"
                 })
-                lange_termijn_probs.append(prob_gb_2y)
 
-            # =========================================================
-            # WEERGEVEN SCORE & RESULTATEN OP SCHERM
-            # =========================================================
+            # WEERGEVEN OP STREAMLIT SCHERM
             st.subheader(f"Analyse Resultaten voor {ticker_input}")
             
-            col1, col2 = st.columns(2)
-
-            # 1. Korte Termijn Score Box
             if korte_termijn_probs:
-                kt_avg = np.mean(korte_termijn_probs) * 100
-                col1.metric("⚡ KORTE TERMIJN SCORE (1 WLEK)", f"{kt_avg:.1f}%")
-                if kt_avg > 60:
-                    col1.success(f"**Korte Termijn Signaal:** STERK BULLISH ({kt_avg:.1f}%)")
-                elif kt_avg >= 45:
-                    col1.warning(f"**Korte Termijn Signaal:** NEUTRAAL ({kt_avg:.1f}%)")
+                korte_termijn_avg = np.mean(korte_termijn_probs) * 100
+                
+                col1, col2 = st.columns(2)
+                col1.metric("Totale AI Korte Termijn Kans (1 Week)", f"{korte_termijn_avg:.1f}%")
+                
+                if korte_termijn_avg > 60:
+                    st.success(f"**AI Signaal:** STERK BULLISH (KOPEN) — Korte termijn consensus is {korte_termijn_avg:.1f}%")
+                elif korte_termijn_avg >= 45:
+                    st.warning(f"**AI Signaal:** NEUTRAAL / WATCH — Korte termijn consensus is {korte_termijn_avg:.1f}%")
                 else:
-                    col1.error(f"**Korte Termijn Signaal:** BEARISH ({kt_avg:.1f}%)")
-
-            # 2. Lange Termijn Score Box
-            if lange_termijn_probs:
-                lt_avg = np.mean(lange_termijn_probs) * 100
-                col2.metric("🏛️ LANGE TERMIJN SCORE (1-2 JAAR)", f"{lt_avg:.1f}%")
-                if lt_avg > 60:
-                    col2.success(f"**Lange Termijn Signaal:** STERK BULLISH ({lt_avg:.1f}%)")
-                elif lt_avg >= 45:
-                    col2.warning(f"**Lange Termijn Signaal:** NEUTRAAL ({lt_avg:.1f}%)")
-                else:
-                    col2.error(f"**Lange Termijn Signaal:** BEARISH ({lt_avg:.1f}%)")
+                    st.error(f"**AI Signaal:** BEARISH (VERKOPEN) — Korte termijn consensus is {korte_termijn_avg:.1f}%")
 
             st.write("---")
-            st.write("### AI Model Overzicht per Categorie")
+            st.write("### AI Model Overzicht")
             
             results_df = pd.DataFrame(results)
             
-            # Styling voor Groen (Bullish) en Rood (Bearish)
-            styled_df = results_df.style.map(highlight_signals, subset=['Signaal'])\
-                                        .map(highlight_prob, subset=['Stijgingskans (%)'])
+            # Pas rij-gebaseerde styling toe op de gehele tabel (axis=1)
+            styled_df = results_df.style.apply(style_row, axis=1)
             
             st.dataframe(styled_df, use_container_width=True)
 
